@@ -181,16 +181,34 @@ rather than pretending to rank. Install qmd and the stub stops mattering.
 
 ```bash
 npm install
-npm test        # smoke + full business lifecycle + skill contract checks
-npm run doctor  # end-to-end check of this working copy
+npm test                   # entry + smoke + full lifecycle + skill contract checks
+npm run doctor             # end-to-end check of this working copy
+npm run doctor -- --remote # also fetch and run the package the clients run
 ```
 
 The tests run against throwaway vaults in the system temp directory, so they
-never touch `~/pi-scholar-vault`. `src/lifecycle-test.mjs` drives the complete
-guarded cycle — add a source, extract it, publish the claim, ingest it, create a
-page, finish — because that path is the one a real skill run takes, and it is
-where the digest guards, the qmd adapter, and workflow finalization actually
-get exercised.
+never touch `~/pi-scholar-vault`.
+
+`src/entry-test.mjs` spawns `bin/pi-scholar-mcp.mjs` with no subcommand — the
+exact thing a client execs — and requires a full handshake through it. Every
+other test spawns `src/server.mjs` directly, which is why a wrong import in the
+bin entry shipped once and stayed invisible until someone installed the package.
+
+`src/lifecycle-test.mjs` drives the complete guarded cycle — add a source,
+extract it, publish the claim, ingest it, create a page, finish — because that
+path is the one a real skill run takes, and it is where the digest guards, the
+qmd adapter, and workflow finalization actually get exercised.
+
+`doctor --remote` is the check that matters for "does it run without local
+files": it reads the command back out of the live client config and runs that.
+It is off by default because a cold npx cache makes it slow.
+
+### Windows note
+
+On Windows the npm shims (`npx`, `npm`) are `.cmd` files, and Node will not exec a
+`.cmd` without a shell. `src/mcp-stdio.mjs` therefore routes such commands
+through `cmd /d /s /c`, which is what real MCP clients do. If you write your own
+spawn code against this package, do the same or the server will never start.
 
 ## License
 

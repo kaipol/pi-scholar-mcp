@@ -16,9 +16,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { connect } from "../src/mcp-stdio.mjs";
-import { clients, configHasServer, configuredVault, resolveTargets, samePath, SERVER_NAME, tomlBlock, vaultDefault, writeConfig } from "../src/mcp-clients.mjs";
+import { clients, configHasServer, configuredEntry, configuredVault, resolveTargets, samePath, SERVER_NAME, tomlBlock, vaultDefault, writeConfig } from "../src/mcp-clients.mjs";
 import { resolveDist } from "../src/resolve-dist.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,11 @@ function usage() {
     "  --from <spec>         npx spec to run instead of the published package",
     "  --local               run this checkout instead of the published package",
     "  --print               show the configuration instead of writing it",
+    "",
+    "doctor options:",
+    "  --target <list>       comma-separated client ids, or 'all' / 'auto' (default: auto)",
+    "  --vault <path>        vault to check",
+    "  --remote              also fetch and run the package the clients run (slow: needs the network)",
   ].join("\n");
 }
 
@@ -147,20 +152,42 @@ function commandVault(path) {
   if (result.status !== 0) fail("vault initialisation failed");
 }
 
-async function handshake(vault) {
-  const server = join(packageRoot, "src", "server.mjs");
-  const session = connect(process.execPath, [server, "--vault", vault], {
+async function handshake(command, args, vault, label) {
+  const session = connect(command, args, {
     env: { PI_SCHOLAR_VAULT: vault },
-    timeoutMs: 120000,
+    timeoutMs: 180000,
   });
   try {
     await session.initialize({ name: "pi-scholar-mcp-doctor", version: "1" });
     const tools = await session.request("tools/list", {});
     const names = (tools.result?.tools ?? []).map((tool) => tool.name);
-    return names;
+    return { label, names };
   } finally {
     session.close();
   }
+}
+
+// Spawning src/server.mjs directly would prove the server works but say nothing
+// about the bin entry the clients actually exec — and that entry is where a
+// wrong relative import hides, invisible to every other test in the suite.
+async function handshakeBin(vault) {
+  return handshake(
+    process.execPath,
+    [join(packageRoot, "bin", "pi-scholar-mcp.mjs"), "serve", "--vault", vault],
+    vault,
+    "bin entry (pi-scholar-mcp serve)",
+  );
+}
+
+async function handshakeRemote(vault) {
+  // Whatever the clients are actually configured to run: npx from GitHub today,
+  // npm once the package is published. Re-reading it from the live config keeps
+  // this honest instead of testing a command nobody uses.
+  const configured = configuredEntry();
+  if (configured === undefined) {
+    return { label: "remote entry", names: [], skipped: "no client has a configured entry yet" };
+  }
+  return handshake(configured.command, configured.args ?? [], vault, `remote entry (${configured.command} ${(configured.args ?? []).join(" ")})`);
 }
 
 async function commandDoctor() {
@@ -206,10 +233,25 @@ async function commandDoctor() {
 
   if (dist && existsSync(join(vault, ".pi-scholar", "vault.json"))) {
     try {
-      const names = await handshake(vault);
-      check(names.length > 0, `MCP server answers stdio: ${names.length} tools (${names.slice(0, 3).join(", ")}...)`);
+      const local = await handshakeBin(vault);
+      check(local.names.length > 0, `${local.label}: ${local.names.length} tools (${local.names.slice(0, 3).join(", ")}...)`);
     } catch (error) {
-      check(false, `MCP server answers stdio: ${error.message}`);
+      check(false, `bin entry (pi-scholar-mcp serve): ${error.message}`);
+    }
+
+    // --remote spends the network round trip to fetch and run the package the
+    // way the clients do. Off by default because a clean npx cache makes it slow.
+    if (args.includes("--remote")) {
+      try {
+        const remote = await handshakeRemote(vault);
+        if (remote.skipped !== undefined) {
+          check(true, `${remote.label}: skipped — ${remote.skipped}`);
+        } else {
+          check(remote.names.length > 0, `${remote.label}: ${remote.names.length} tools`);
+        }
+      } catch (error) {
+        check(false, `remote entry: ${error.message}`);
+      }
     }
   }
 
@@ -218,8 +260,11 @@ async function commandDoctor() {
 }
 
 async function commandServe() {
-  // Hand the process over to the MCP server; stdio is the protocol channel.
-  await import("./server.mjs");
+  // Hand the process over to the MCP server; stdio is the protocol channel. The
+  // path is resolved from this file's location rather than a relative specifier,
+  // because "./server.mjs" would resolve against bin/ and the server lives in
+  // src/ — which is exactly the failure the published package used to hit.
+  await import(pathToFileURL(join(packageRoot, "src", "server.mjs")).href);
 }
 
 const args = process.argv.slice(2);

@@ -138,6 +138,18 @@ export function configuredVault(client) {
   return entry.env?.PI_SCHOLAR_VAULT;
 }
 
+// The full entry a client stores — command, args, vault — for whichever client
+// is configured first. Doctor uses this to spawn exactly what the clients will
+// spawn, so a package whose bin entry is broken fails the check instead of
+// looking healthy because src/server.mjs still runs.
+export function configuredEntry() {
+  for (const client of clients()) {
+    const entry = readServerEntry(client);
+    if (entry !== undefined && entry.command !== undefined) return entry;
+  }
+  return undefined;
+}
+
 // Reads back the identity of an existing entry — command, args, and vault — in
 // whichever shape the client stores it. Only these three fields are compared,
 // because a hand-configured entry may legitimately carry extras (`type`,

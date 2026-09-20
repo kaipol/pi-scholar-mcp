@@ -1,6 +1,6 @@
 {
   "name": "pi-scholar-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server and skills that expose the pi-scholar sourced-wiki and spaced-repetition tools to any MCP client.",
   "license": "MIT",
   "type": "module",
@@ -18,7 +18,7 @@
     "start": "node bin/pi-scholar-mcp.mjs",
     "doctor": "node bin/pi-scholar-mcp.mjs doctor",
     "install-clients": "node bin/pi-scholar-mcp.mjs install",
-    "test": "node src/smoke-client.mjs && node src/lifecycle-test.mjs && node src/installer-test.mjs && node src/verify-skill-contracts.mjs"
+    "test": "node src/entry-test.mjs && node src/smoke-client.mjs && node src/lifecycle-test.mjs && node src/installer-test.mjs && node src/verify-skill-contracts.mjs"
   },
   "engines": {
     "node": ">=20"

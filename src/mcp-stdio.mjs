@@ -4,11 +4,32 @@
 // MCP client does.
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 
 export const PROTOCOL_VERSION = "2024-11-05";
 
+// On Windows the npm shims (`npx`, `npm`) are `.cmd` files, and Node refuses to
+// exec a `.cmd` without a shell (and a bare `npx` is not found at all). Real MCP
+// clients work around this by going through `cmd /c`; this client does the same,
+// so what it spawns is what they spawn. Elsewhere the command is used verbatim.
+function spawnCommand(command, args, options) {
+  if (process.platform !== "win32") return spawn(command, args, options);
+
+  const hasExtension = /\.[A-Za-z0-9]+$/.test(command);
+  if (hasExtension) return spawn(command, args, options);
+
+  const found = (process.env.PATH ?? "").split(delimiter).some((dir) => {
+    if (dir === "") return false;
+    return [".cmd", ".exe", ".bat"].some((ext) => existsSync(join(dir, command + ext)));
+  });
+  if (!found) return spawn(command, args, options);
+
+  return spawn("cmd", ["/d", "/s", "/c", command, ...args], options);
+}
+
 export function connect(command, args, { env, cwd, stdio, timeoutMs = 180000 } = {}) {
-  const child = spawn(command, args, {
+  const child = spawnCommand(command, args, {
     env: { ...process.env, ...env },
     cwd,
     stdio: stdio ?? ["pipe", "pipe", "pipe"],
