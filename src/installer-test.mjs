@@ -84,6 +84,28 @@ check(
   "the Codex table is replaced, not duplicated",
 );
 
+// --local points the clients at this checkout instead of the published package,
+// which is the form used before the package is on npm.
+install("--local", "--vault", vaultA);
+const local = zcodeConfig().mcp.servers["pi-scholar"];
+check(
+  local.command === process.execPath && local.args[0].endsWith(join("bin", "pi-scholar-mcp.mjs")),
+  "--local points the config at this checkout",
+);
+check(codexConfig().includes(`command = "${process.execPath.replace(/\\/g, "\\\\")}"`), "--local reaches the Codex config");
+
+// Switching back to the published package with the same vault must still update
+// the entry: the command changed, so the old one is stale even though the vault
+// matches. This is the case a vault-only comparison gets wrong.
+install("--vault", vaultA);
+check(zcodeConfig().mcp.servers["pi-scholar"].command === "npx", "switching back to the published package updates the entry");
+
+// The same vault typed with forward slashes is the same path, not a new one, so
+// the entry must be left alone rather than rewritten.
+const settled = readFileSync(join(home, ".zcode", "cli", "config.json"), "utf8");
+install("--vault", vaultA.replace(/\\/g, "/"));
+check(readFileSync(join(home, ".zcode", "cli", "config.json"), "utf8") === settled, "a forward-slash vault path does not rewrite the config");
+
 rmSync(home, { recursive: true, force: true });
 console.log(failures === 0 ? "\nINSTALLER TEST PASSED" : `\n${failures} installer check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export const SERVER_NAME = "pi-scholar";
 const HOME = homedir();
@@ -138,24 +138,49 @@ export function configuredVault(client) {
   return entry.env?.PI_SCHOLAR_VAULT;
 }
 
+// Reads back the identity of an existing entry — command, args, and vault — in
+// whichever shape the client stores it. Only these three fields are compared,
+// because a hand-configured entry may legitimately carry extras (`type`,
+// `enabled`, timeouts) that this package never sets.
 function readServerEntry(client) {
   if (!existsSync(client.configPath)) return undefined;
   if (client.configKind === "toml") {
     const text = readFileSync(client.configPath, "utf8");
     const span = tomlTableSpan(text, `mcp_servers.${SERVER_NAME}`);
     if (span === undefined) return undefined;
-    const vault = span.lines
-      .slice(span.start, span.end)
-      .join("\n")
-      .match(/^\s*PI_SCHOLAR_VAULT\s*=\s*"([^"]*)"/m);
-    return vault ? { env: { PI_SCHOLAR_VAULT: tomlUnescape(vault[1]) } } : {};
+    const body = span.lines.slice(span.start, span.end).join("\n");
+    const command = body.match(/^\s*command\s*=\s*"((?:[^"\\]|\\.)*)"/m);
+    const argsLine = body.match(/^\s*args\s*=\s*\[(.*)\]/m);
+    const vault = body.match(/^\s*PI_SCHOLAR_VAULT\s*=\s*"((?:[^"\\]|\\.)*)"/m);
+    const args = argsLine ? [...argsLine[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => tomlUnescape(match[1])) : undefined;
+    return {
+      command: command ? tomlUnescape(command[1]) : undefined,
+      args,
+      env: vault ? { PI_SCHOLAR_VAULT: tomlUnescape(vault[1]) } : undefined,
+    };
   }
   let node = readJsonConfig(client.configPath);
   for (const key of client.configKind === "nested-json" ? ["mcp", "servers", SERVER_NAME] : ["mcpServers", SERVER_NAME]) {
     node = node?.[key];
     if (node === undefined) return undefined;
   }
-  return node;
+  return { command: node.command, args: node.args, env: node.env };
+}
+
+// A path is the same path whether it was typed with forward or backward
+// slashes, and JSON.stringify keeps whichever the caller passed, so every vault
+// comparison goes through here rather than comparing raw strings.
+export function samePath(a, b) {
+  if (a === undefined || b === undefined) return a === b;
+  return resolve(a) === resolve(b);
+}
+
+function sameEntry(existing, wanted) {
+  return (
+    existing.command === wanted.command &&
+    JSON.stringify(existing.args ?? []) === JSON.stringify(wanted.args ?? []) &&
+    samePath(existing.env?.PI_SCHOLAR_VAULT, wanted.env?.PI_SCHOLAR_VAULT)
+  );
 }
 
 // The span of one TOML table including its sub-tables. `[mcp_servers.x]` runs
@@ -176,30 +201,30 @@ function tomlTableSpan(text, table) {
   return { lines, start, end };
 }
 
-export function tomlBlock(vault) {
+export function tomlBlock(entry) {
   const lines = [
     `[mcp_servers.${SERVER_NAME}]`,
     "enabled = true",
-    'command = "npx"',
-    'args = ["-y", "pi-scholar-mcp@latest"]',
+    `command = ${tomlString(entry.command)}`,
+    `args = [${entry.args.map(tomlString).join(", ")}]`,
     "startup_timeout_sec = 120",
     "",
     `[mcp_servers.${SERVER_NAME}.env]`,
-    `PI_SCHOLAR_VAULT = ${tomlString(vault)}`,
   ];
+  for (const [key, value] of Object.entries(entry.env ?? {})) {
+    lines.push(`${key} = ${tomlString(value)}`);
+  }
   return `${lines.join("\n")}\n`;
 }
 
 export function writeConfig(client, entry) {
   const existing = readServerEntry(client);
-  if (existing !== undefined) {
-    const currentVault = existing.env?.PI_SCHOLAR_VAULT;
-    const wantedVault = entry.env?.PI_SCHOLAR_VAULT;
-    // Leave a correct entry alone: rewriting it would churn the backup and
-    // destroy the one copy of the user's pre-install configuration.
-    if (currentVault === undefined || currentVault === wantedVault) {
-      return { written: false, path: client.configPath, reason: "already configured" };
-    }
+  // Leave a correct entry alone: rewriting it would churn the backup and
+  // destroy the one copy of the user's pre-install configuration. An entry that
+  // differs — a different vault, or a switch between the published package and
+  // a working copy — is stale and gets updated.
+  if (existing !== undefined && sameEntry(existing, entry)) {
+    return { written: false, path: client.configPath, reason: "already configured" };
   }
 
   const { configPath, configKind } = client;
@@ -207,7 +232,7 @@ export function writeConfig(client, entry) {
 
   if (configKind === "toml") {
     const current = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
-    const block = tomlBlock(entry.env?.PI_SCHOLAR_VAULT ?? vaultDefault());
+    const block = tomlBlock(entry);
     if (existing === undefined) {
       const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
       next = `${current}${prefix}\n${block}`;

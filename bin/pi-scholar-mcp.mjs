@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connect } from "../src/mcp-stdio.mjs";
-import { clients, configHasServer, configuredVault, resolveTargets, SERVER_NAME, tomlBlock, vaultDefault, writeConfig } from "../src/mcp-clients.mjs";
+import { clients, configHasServer, configuredVault, resolveTargets, samePath, SERVER_NAME, tomlBlock, vaultDefault, writeConfig } from "../src/mcp-clients.mjs";
 import { resolveDist } from "../src/resolve-dist.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,8 +53,19 @@ function usage() {
     "install options:",
     "  --target <list>       comma-separated client ids, or 'all' / 'auto' (default: auto)",
     "  --vault <path>        vault to point the clients at",
+    "  --local               run this checkout instead of the published package",
     "  --print               show the configuration instead of writing it",
   ].join("\n");
+}
+
+// The default entry runs the published package through npx, which is what makes
+// the setup independent of any local files. --local points the clients at this
+// checkout instead, for the window before the package is published or when
+// working on the bridge itself.
+function entryFor(client, vault) {
+  const entry = client.entry(vault);
+  if (!hasFlag("--local")) return entry;
+  return { ...entry, command: process.execPath, args: [join(packageRoot, "bin", "pi-scholar-mcp.mjs")] };
 }
 
 function piScholarCli(args, options = {}) {
@@ -93,7 +104,8 @@ function commandInstall() {
   if (hasFlag("--print")) {
     for (const client of targets) {
       log(`--- ${client.label} (${client.configPath}) ---`);
-      log(client.configKind === "toml" ? tomlBlock(client, vault) : JSON.stringify(client.entry(vault), null, 2));
+      const entry = entryFor(client, vault);
+      log(client.configKind === "toml" ? tomlBlock(entry) : JSON.stringify(entry, null, 2));
       log("");
     }
     return;
@@ -112,7 +124,7 @@ function commandInstall() {
     const installed = installSkills(client.skillsDir);
     log(`  skills -> ${client.skillsDir} (${installed.length})`);
     try {
-      const outcome = writeConfig(client, client.entry(vault));
+      const outcome = writeConfig(client, entryFor(client, vault));
       log(outcome.written ? `  config -> ${outcome.path}` : `  config: ${outcome.reason}`);
     } catch (error) {
       log(`  config: ${error.message}`);
@@ -180,7 +192,7 @@ async function commandDoctor() {
     check(skills.length > 0, `${client.label} skills: ${skills.length > 0 ? skills.join(", ") : `none in ${client.skillsDir}`}`);
     if (configHasServer(client)) {
       const configured = configuredVault(client);
-      const matches = configured === undefined || configured === vault;
+      const matches = samePath(configured, vault);
       check(matches, `${client.label} MCP config: ${matches ? client.configPath : `${client.configPath} points at ${configured}, not ${vault}`}`);
     } else {
       check(false, `${client.label} MCP config: no '${SERVER_NAME}' entry in ${client.configPath}`);

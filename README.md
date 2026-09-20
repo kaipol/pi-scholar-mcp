@@ -80,6 +80,19 @@ With no `--target`, the installer picks every client whose home directory
 exists. `--vault <path>` points the clients somewhere other than
 `~/pi-scholar-vault`.
 
+By default the clients run the **published** package (`npx -y
+pi-scholar-mcp@latest`), which is what makes the setup independent of any local
+files. Until that package exists — or while you are changing the bridge itself —
+add `--local` to point the clients at your working copy instead:
+
+```bash
+npx -y pi-scholar-mcp install --local
+```
+
+The only difference between the two forms is the `command` and `args` of the
+server entry, so moving from `--local` to the published package is a matter of
+re-running `install` without the flag.
+
 ## Manual configuration
 
 For a client the installer does not know about, the server is ordinary MCP over
