@@ -1,0 +1,38 @@
+{
+  "name": "pi-scholar-mcp",
+  "version": "1.0.0",
+  "description": "MCP server and skills that expose the pi-scholar sourced-wiki and spaced-repetition tools to any MCP client.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "pi-scholar-mcp": "bin/pi-scholar-mcp.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node src/patch-windows.mjs",
+    "start": "node bin/pi-scholar-mcp.mjs",
+    "doctor": "node bin/pi-scholar-mcp.mjs doctor",
+    "install-clients": "node bin/pi-scholar-mcp.mjs install",
+    "test": "node src/smoke-client.mjs && node src/lifecycle-test.mjs && node src/installer-test.mjs && node src/verify-skill-contracts.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pi-scholar": "0.0.1"
+  },
+  "keywords": [
+    "mcp",
+    "pi-scholar",
+    "spaced-repetition",
+    "wiki",
+    "zcode",
+    "claude",
+    "codex"
+  ]
+}
