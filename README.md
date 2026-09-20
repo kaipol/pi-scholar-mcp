@@ -82,16 +82,17 @@ exists. `--vault <path>` points the clients somewhere other than
 
 By default the clients run the **published** package (`npx -y
 pi-scholar-mcp@latest`), which is what makes the setup independent of any local
-files. Until that package exists — or while you are changing the bridge itself —
-add `--local` to point the clients at your working copy instead:
+files. Two flags change where that command comes from:
 
 ```bash
-npx -y pi-scholar-mcp install --local
+npx -y pi-scholar-mcp install --local      # run this checkout
+npx -y pi-scholar-mcp install --from github:kaipol/pi-scholar-mcp
 ```
 
-The only difference between the two forms is the `command` and `args` of the
-server entry, so moving from `--local` to the published package is a matter of
-re-running `install` without the flag.
+`--from` is for the window before the package reaches npm — it points the
+clients at the GitHub repository instead. The only difference between all three
+forms is the `command` and `args` of the server entry, so moving between them is
+a matter of re-running `install`.
 
 ## Manual configuration
 

@@ -106,6 +106,16 @@ const settled = readFileSync(join(home, ".zcode", "cli", "config.json"), "utf8")
 install("--vault", vaultA.replace(/\\/g, "/"));
 check(readFileSync(join(home, ".zcode", "cli", "config.json"), "utf8") === settled, "a forward-slash vault path does not rewrite the config");
 
+// --from swaps the npx spec, which is how the clients run the GitHub repository
+// before the package is on npm.
+install("--from", "github:kaipol/pi-scholar-mcp", "--vault", vaultA);
+const fromEntry = zcodeConfig().mcp.servers["pi-scholar"];
+check(
+  fromEntry.command === "npx" && fromEntry.args.join(" ") === "-y github:kaipol/pi-scholar-mcp",
+  "--from points the config at the given npx spec",
+);
+check(codexConfig().includes('args = ["-y", "github:kaipol/pi-scholar-mcp"]'), "--from reaches the Codex config");
+
 rmSync(home, { recursive: true, force: true });
 console.log(failures === 0 ? "\nINSTALLER TEST PASSED" : `\n${failures} installer check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

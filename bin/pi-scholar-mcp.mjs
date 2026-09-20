@@ -53,19 +53,24 @@ function usage() {
     "install options:",
     "  --target <list>       comma-separated client ids, or 'all' / 'auto' (default: auto)",
     "  --vault <path>        vault to point the clients at",
+    "  --from <spec>         npx spec to run instead of the published package",
     "  --local               run this checkout instead of the published package",
     "  --print               show the configuration instead of writing it",
   ].join("\n");
 }
 
 // The default entry runs the published package through npx, which is what makes
-// the setup independent of any local files. --local points the clients at this
-// checkout instead, for the window before the package is published or when
-// working on the bridge itself.
+// the setup independent of any local files. --from swaps the npx spec for
+// another source (a GitHub repo before the package is on npm, say), and --local
+// points the clients at this checkout instead, for work on the bridge itself.
 function entryFor(client, vault) {
   const entry = client.entry(vault);
-  if (!hasFlag("--local")) return entry;
-  return { ...entry, command: process.execPath, args: [join(packageRoot, "bin", "pi-scholar-mcp.mjs")] };
+  if (hasFlag("--local")) {
+    return { ...entry, command: process.execPath, args: [join(packageRoot, "bin", "pi-scholar-mcp.mjs")] };
+  }
+  const from = flagValue("--from");
+  if (from) return { ...entry, command: "npx", args: ["-y", from] };
+  return entry;
 }
 
 function piScholarCli(args, options = {}) {
